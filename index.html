@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 修正 App 資訊與 ICON 相關標籤 -->
+    <title>福岡楓葉銀杏之旅 - 行程規劃</title>
+    
+    <!-- 讓網頁看起來更像 App 的設定 -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="福岡旅遊">
+    
+    <!-- PWA / Android 專用 ICON -->
+    <link rel="icon" href="https://placehold.co/192x192/D04B3E/FDF8E1?text=Fuku+Icon">
+    <!-- iOS / Apple 專用 ICON (會自動套用圓角效果) -->
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/D04B3E/FDF8E1?text=Fuku+Icon">
+
+    <!-- 載入 Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- 載入 Vue 3 CDN -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- 載入 Font Awesome Icons (用於 Tab) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+    
+    <!-- 載入 Firebase 必要的 SDK -->
+    <script type="module">
+        import { initializeApp } from "firebase/app";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // 將必要的 Firebase 模組附加到 window 供 Vue 實例使用
+        window.firebase = {
+            initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, 
+            getFirestore, doc, getDoc, addDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, deleteField
+        };
+        // 啟用 Firestore 偵錯日誌
+        setLogLevel('Debug');
+    </script>
+
+    <!-- 自定義 Tailwind 設定和日系極簡樣式 -->
+    <style>
+        /* 日系極簡配色 */
+        :root {
+            --bg-cream: #FDF8E1; /* 基礎背景: 淺米黃/銀杏淡色 */
+            --accent-red: #D04B3E; /* 楓葉紅/主色 */
+            --accent-gold: #F4A261; /* 銀杏金/次要點綴 */
+            --text-dark: #4A3B2A; /* 深棕色/文字 */
+        }
+        .bg-cream { background-color: var(--bg-cream); }
+        .text-dark { color: var(--text-dark); }
+        .bg-accent-red { background-color: var(--accent-red); }
+        .bg-accent-gold { background-color: var(--accent-gold); }
+        .border-accent-red { border-color: var(--accent-red); }
+
+        /* 頁首圓弧銜接效果 */
+        .header-banner {
+            background-color: var(--accent-red);
+            position: relative;
+            z-index: 10;
+        }
+        .header-curve {
+            position: absolute;
+            bottom: -1px; /* 微調以避免縫隙 */
+            width: 100%;
+            height: 60px; /* 圓弧高度 */
+            overflow: hidden;
+        }
+        .header-curve::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -50%;
+            width: 200%; /* 寬度加倍以容納圓弧 */
+            height: 100px;
+            background-color: var(--bg-cream);
+            border-radius: 0 0 50% 50%; /* 底部圓弧 */
+        }
+        /* 主內容區域向上拉動重疊 */
+        .main-content-wrapper {
+            margin-top: -30px; /* 負邊距將內容上拉重疊 */
+            position: relative;
+            z-index: 20;
+            min-height: calc(100vh - 120px); /* 確保內容足夠長 */
+        }
+
+        /* 日期選單樣式 */
+        .date-scroll-container::-webkit-scrollbar {
+            display: none; /* 隱藏滾動條 */
+        }
+        .date-scroll-container {
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+
+        /* 拖曳樣式 */
+        .dragging {
+            opacity: 0.5;
+            border: 2px dashed var(--accent-red);
+        }
+        /* 確保非拖曳狀態的元素顯示在最上層 */
+        .itinerary-card {
+            z-index: 1; 
+        }
+        .dragging {
+             z-index: 100;
+        }
+    </style>
+</head>
+<body class="bg-cream text-dark antialiased">
+
+<div id="app" v-cloak class="min-h-screen">
+    <!-- 頁首 Banner 區塊 -->
+    <header class="header-banner h-56 md:h-64 shadow-lg">
+        <div class="p-6 pt-12 md:p-8 flex justify-between items-center relative z-20">
+            <!-- 2. Banner 文字修正為英文 -->
+            <h1 class="text-3xl font-bold text-white tracking-wider">
+                <i class="fas fa-route mr-2"></i> Fukuoka Mini Trip
+            </h1>
+            <div v-if="userId" class="text-sm text-white opacity-75 truncate max-w-[100px] md:max-w-full">
+                使用者 ID: {{ userId }}
+            </div>
+        </div>
+        
+        <!-- 3. 頁首 Banner 圖片與圓弧效果 (使用 SVG 模擬楓葉和銀杏插畫) -->
+        <div class="absolute inset-0 z-10 opacity-70 overflow-hidden">
+            <svg class="w-full h-full" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <!-- 楓葉圖案 (使用 path data 模擬) -->
+                    <path id="maple" fill="var(--accent-gold)" opacity="0.4"
+                          d="M 50 10 L 60 40 L 90 30 L 70 50 L 90 70 L 60 60 L 50 90 L 40 60 L 10 70 L 30 50 L 10 30 L 40 40 Z"/>
+                    <!-- 銀杏葉圖案 (簡單扇形) -->
+                    <path id="ginkgo" fill="var(--accent-gold)" opacity="0.6"
+                          d="M 50 5 C 30 10 20 40 20 50 C 20 60 30 90 50 95 C 70 90 80 60 80 50 C 80 40 70 10 50 5 Z"/>
+                </defs>
+
+                <!-- 隨機放置楓葉和銀杏葉 (使用 var(--accent-red) 背景色) -->
+                <rect width="100" height="100" fill="var(--accent-red)"></rect>
+
+                <g transform="translate(10, 5) scale(0.2) rotate(10)">
+                    <use href="#maple" transform="scale(1.5)"></use>
+                </g>
+                <g transform="translate(30, 40) scale(0.3) rotate(150)">
+                    <use href="#ginkgo"></use>
+                </g>
+                <g transform="translate(70, 20) scale(0.25) rotate(-40)">
+                    <use href="#maple"></use>
+                </g>
+                <g transform="translate(85, 55) scale(0.4) rotate(70)">
+                    <use href="#ginkgo"></use>
+                </g>
+                <g transform="translate(45, 80) scale(0.35) rotate(220)">
+                    <use href="#maple"></use>
+                </g>
+            </svg>
+        </div>
+        
+        <!-- 圓弧銜接 -->
+        <div class="header-curve z-20"></div>
+
+        <!-- Tab 按鈕 (浮動於頁首右下方) -->
+        <div class="absolute right-6 bottom-[-16px] z-30 flex space-x-2 rounded-full shadow-xl p-2 bg-white/90 backdrop-blur-sm border-2 border-accent-gold">
+            <button v-for="tab in tabs" :key="tab.id" 
+                    @click="currentTab = tab.id"
+                    :class="{'bg-accent-red text-white shadow-md': currentTab === tab.id, 'text-dark hover:bg-gray-100': currentTab !== tab.id}"
+                    class="p-3 rounded-full transition-all duration-200">
+                <i :class="tab.icon"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- 主內容區域 -->
+    <main class="main-content-wrapper p-4 pt-6 md:p-8 max-w-4xl mx-auto">
+        
+        <!-- 加載狀態顯示 -->
+        <div v-if="!isAuthReady || isLoading" class="text-center py-12 text-dark">
+            <i class="fas fa-spinner fa-spin text-4xl text-accent-red"></i>
+            <p class="mt-4">載入中，請稍候...</p>
+        </div>
+
+        <!-- 1. 每日行程表 (Daily Itinerary) -->
+        <section v-show="currentTab === 'itinerary' && isAuthReady && !isLoading">
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 border-accent-gold">每日行程表</h2>
+            
+            <!-- 日期選單 (橫向滑動) -->
+            <div class="date-scroll-container flex space-x-4 overflow-x-auto pb-4 mb-6">
+                <button v-for="(day, index) in tripDays" :key="index"
+                        @click="selectedDate = day.date"
+                        :class="{'bg-accent-red text-white shadow-lg transform scale-105': selectedDate === day.date, 'bg-white text-dark border border-accent-gold/50 hover:bg-accent-gold/20': selectedDate !== day.date}"
+                        class="flex-shrink-0 w-16 h-16 rounded-xl p-2 transition-all duration-200 shadow-md">
+                    <div class="text-sm font-light uppercase">{{ day.dayOfWeek }}</div>
+                    <div class="text-xl font-extrabold mt-[-4px]">{{ day.dayOfMonth }}</div>
+                </button>
+            </div>
+
+            <!-- 行程篩選 (下拉分類欄) -->
+            <div class="mb-4">
+                <label for="categoryFilter" class="block text-sm font-medium mb-1">篩選分類:</label>
+                <select id="categoryFilter" v-model="filterCategory" class="p-2 border rounded-lg w-full md:w-1/3 bg-white border-accent-gold/50">
+                    <option value="">全部</option>
+                    <option v-for="cat in categories" :key="cat.value" :value="cat.value">{{ cat.label }}</option>
+                </select>
+            </div>
+
+            <!-- 渲染每日行程 (使用 currentDayItinerary 進行拖曳，filteredItinerary 僅用於顯示) -->
+            <div v-if="filteredItinerary.length > 0" class="space-y-4">
+                
+                <!-- 模擬天氣資訊 (顯示在第一個行程上方) -->
+                <div class="p-4 bg-white rounded-xl shadow-md border-l-4 border-accent-gold mb-6">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <i class="fas fa-cloud-sun fa-2x text-accent-gold mr-3"></i>
+                            <div>
+                                <p class="text-lg font-semibold">福岡市天氣預報</p>
+                                <p class="text-sm text-gray-500">自動抓取當地氣溫 (模擬)</p>
+                            </div>
+                        </div>
+                        <div class="text-right">
+                            <p class="text-2xl font-bold text-accent-red">18°C</p>
+                            <p class="text-sm text-gray-600">體感：16°C</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 1. 拖曳/排序功能修正: 
+                    - v-for 迴圈使用 currentDayItinerary (當天所有行程，已排序)
+                    - 篩選透過 v-show 實時隱藏/顯示
+                    - 航班卡片不能拖曳
+                -->
+                <div @dragover.prevent @drop="handleDrop(index, $event)" 
+                     v-for="(item, index) in currentDayItinerary" :key="item.id" 
+                     :draggable="filterCategory === '' && !isFlightCard(item)"
+                     @dragstart="handleDragStart(item, $event)" 
+                     class="itinerary-card group bg-white p-4 rounded-xl shadow-lg hover:shadow-xl transition duration-300 border-l-4 border-accent-red/50 cursor-pointer"
+                     :class="{'dragging': draggingItem && draggingItem.id === item.id}"
+                     v-show="filterCategory === '' || item.category === filterCategory"> 
+                    
+                    <!-- 交通時間 (非第一個行程/非航班) -->
+                    <div v-if="index > 0 && !isFlightCard(item)" class="mb-3 text-sm flex items-center text-gray-600">
+                        <i class="fas fa-walking mr-2 text-accent-gold"></i>
+                        <span class="font-semibold text-accent-red">預計交通：25 分鐘 (步行)</span>
+                        <i class="fas fa-arrow-right ml-4 text-gray-400"></i>
+                    </div>
+                    <!-- 每日第一個行程交通時間 (從飯店出發) -->
+                    <div v-if="index === 0 && !isFlightCard(item)" class="mb-3 text-sm flex items-center text-gray-600">
+                        <i class="fas fa-car mr-2 text-accent-gold"></i>
+                        <span class="font-semibold text-accent-red">從飯店出發：10 分鐘 (開車)</span>
+                        <i class="fas fa-arrow-right ml-4 text-gray-400"></i>
+                    </div>
+
+                    <!-- 航班卡片 (特殊顯示) -->
+                    <div v-if="isFlightCard(item)" class="bg-accent-red/10 p-4 rounded-lg border border-accent-red/30">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-xl font-bold text-accent-red">{{ item.name }}</h4>
+                            <span class="text-sm font-medium text-accent-red px-3 py-1 rounded-full bg-accent-red/20">{{ categories.find(c => c.value === item.category)?.label }}</span>
+                        </div>
+                        <p class="mt-2 text-dark font-mono text-lg">
+                            {{ item.details.flightNumber }} <i class="fas fa-plane ml-1 mr-2"></i> {{ item.details.depTime }} - {{ item.details.arrTime }}
+                        </p>
+                        <p class="text-sm text-gray-600">
+                            {{ item.details.date }} | 飛行時間：{{ item.details.duration }}
+                        </p>
+                    </div>
+
+                    <!-- 一般行程卡片 -->
+                    <div v-else @click="editItem(item)" class="flex justify-between items-start">
+                        <div>
+                            <div class="flex items-center">
+                                <h4 class="text-lg font-semibold text-dark">{{ item.name }}</h4>
+                                <span class="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-accent-gold/30 text-dark">{{ categories.find(c => c.value === item.category)?.label }}</span>
+                            </div>
+                            <p v-if="item.details.hours" class="text-sm text-gray-600 mt-1"><i class="far fa-clock mr-1"></i> {{ item.details.hours }}</p>
+                            <p v-if="item.details.ticket" class="text-sm text-gray-600"><i class="fas fa-ticket-alt mr-1"></i> 門票: {{ item.details.ticket }}</p>
+                            <p v-if="item.details.notes" class="text-sm text-gray-700 mt-2 italic border-l-2 pl-2 border-accent-gold">{{ item.details.notes }}</p>
+                        </div>
+                        <div class="flex flex-col items-end space-y-2">
+                            <button @click.stop="openNavigation(item.name, item.details.address)" class="text-accent-red hover:text-dark transition">
+                                <i class="fas fa-map-marked-alt fa-lg"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div v-else class="text-center py-8 text-gray-500 bg-white p-6 rounded-xl shadow-md">
+                <i class="fas fa-calendar-times fa-3x mb-3"></i>
+                <p>本日沒有行程，點擊右下角 '+' 新增。</p>
+            </div>
+            
+            <!-- 新增行程按鈕 (右下角浮動) -->
+            <button @click="openModal('itinerary', { date: selectedDate })" 
+                    class="fixed right-6 bottom-6 md:right-10 md:bottom-10 w-14 h-14 rounded-full bg-accent-gold text-white shadow-2xl hover:bg-accent-red transition-all duration-300 z-50">
+                <i class="fas fa-plus fa-lg"></i>
+            </button>
+        </section>
+
+        <!-- 2. 資訊 (Information) -->
+        <section v-show="currentTab === 'info' && isAuthReady && !isLoading">
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 border-accent-gold">旅行資訊總覽</h2>
+            <div class="space-y-6">
+                
+                <!-- 匯率換算 -->
+                <div class="p-6 bg-white rounded-xl shadow-lg border-l-4 border-accent-red">
+                    <h3 class="text-xl font-bold mb-3 flex items-center"><i class="fas fa-money-bill-transfer mr-2 text-accent-gold"></i> 匯率換算 (日幣 JPY → 台幣 TWD)</h3>
+                    <p class="text-xs text-gray-500 mb-3">* 匯率以 1 JPY = {{ exchangeRateJPYToTWD }} TWD 模擬計算</p>
+                    <div class="flex space-x-3 items-center">
+                        <input type="number" v-model.number="jpyAmount" placeholder="輸入日幣金額 (JPY)"
+                               class="flex-1 p-3 border rounded-lg focus:ring-accent-gold focus:border-accent-gold">
+                        <i class="fas fa-equals text-lg text-accent-red"></i>
+                        <div class="w-1/3 p-3 bg-gray-100 rounded-lg font-bold text-lg text-right">
+                            {{ convertedTWD.toFixed(2) }} TWD
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 航班資訊 -->
+                <div class="p-6 bg-white rounded-xl shadow-lg border-l-4 border-accent-gold">
+                    <h3 class="text-xl font-bold mb-4 flex items-center"><i class="fas fa-plane-departure mr-2 text-accent-red"></i> 航班資訊</h3>
+                    <div v-for="(flight, type) in flightInfo" :key="type" class="mb-4 pb-4 border-b last:border-b-0">
+                        <h4 class="font-semibold text-lg text-dark mb-2">{{ type === 'outbound' ? '去程' : '回程' }} ({{ flight.flightNumber }})</h4>
+                        <div class="grid grid-cols-2 gap-2 text-sm text-gray-700">
+                            <div><i class="fas fa-calendar-alt mr-2"></i>日期: {{ flight.date }}</div>
+                            <div><i class="fas fa-clock mr-2"></i>飛行時間: {{ flight.duration }}</div>
+                            <div><i class="fas fa-clock mr-2"></i>起飛: {{ flight.depTime }} ({{ flight.depAirport }})</div>
+                            <div><i class="fas fa-plane-arrival mr-2"></i>抵達: {{ flight.arrTime }} ({{ flight.arrAirport }})</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 住宿資訊 -->
+                <div class="p-6 bg-white rounded-xl shadow-lg border-l-4 border-accent-red">
+                    <h3 class="text-xl font-bold mb-4 flex items-center"><i class="fas fa-hotel mr-2 text-accent-gold"></i> 住宿資訊</h3>
+                    <p class="font-semibold text-lg">{{ accommodationInfo.name }}</p>
+                    <div class="mt-2 text-sm space-y-1 text-gray-700">
+                        <p><i class="fas fa-map-marker-alt mr-2"></i>地址: {{ accommodationInfo.address }}</p>
+                        <p><i class="fas fa-phone mr-2"></i>電話: {{ accommodationInfo.phone }}</p>
+                        <p><i class="fas fa-sign-in-alt mr-2"></i>入住: {{ accommodationInfo.checkIn }}</p>
+                        <p><i class="fas fa-sign-out-alt mr-2"></i>退房: {{ accommodationInfo.checkOut }}</p>
+                        <a :href="accommodationInfo.mapLink" target="_blank" class="inline-block text-accent-red font-medium hover:underline mt-2">
+                            <i class="fas fa-external-link-alt mr-1"></i> Google 地圖導航
+                        </a>
+                    </div>
+                </div>
+
+                <!-- ESIM 卡與 Visit Japan Web 資訊卡 -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <a href="https://example.com/esim-link" target="_blank" class="p-4 bg-accent-gold/20 rounded-xl shadow-md flex items-center justify-between hover:bg-accent-gold/40 transition">
+                        <div>
+                            <h4 class="font-bold text-dark text-lg">eSIM 卡資訊</h4>
+                            <p class="text-sm text-gray-700">點擊前往購買/設定連結</p>
+                        </div>
+                        <i class="fas fa-wifi fa-2x text-accent-gold"></i>
+                    </a>
+                    <a href="https://vjw-service.digital.go.jp/" target="_blank" class="p-4 bg-accent-red/20 rounded-xl shadow-md flex items-center justify-between hover:bg-accent-red/40 transition">
+                        <div>
+                            <h4 class="font-bold text-dark text-lg">Visit Japan Web</h4>
+                            <p class="text-sm text-gray-700">點擊前往官方網站</p>
+                        </div>
+                        <i class="fas fa-passport fa-2x text-accent-red"></i>
+                    </a>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- 3. 購物清單 (Shopping List) -->
+        <section v-show="currentTab === 'shopping' && isAuthReady && !isLoading">
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 border-accent-gold">購物清單 / 準備清單</h2>
+            <div class="space-y-4">
+                <div v-for="item in shoppingList" :key="item.id" 
+                     class="bg-white p-4 rounded-xl shadow-lg flex items-center justify-between hover:shadow-xl transition duration-300">
+                    <label class="flex items-center space-x-3 w-full cursor-pointer">
+                        <input type="checkbox" :checked="item.isChecked" @change="toggleShoppingItem(item.id)"
+                               class="h-5 w-5 text-accent-red border-gray-300 rounded focus:ring-accent-red">
+                        <span :class="{'line-through text-gray-400': item.isChecked, 'text-dark': !item.isChecked}"
+                              @click.prevent="toggleShoppingItem(item.id)"
+                              class="text-lg flex-1">{{ item.name }}</span>
+                    </label>
+                    <button @click="editShoppingItem(item)" class="text-gray-400 hover:text-accent-red ml-4">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    <button @click="deleteShoppingItem(item.id)" class="text-gray-400 hover:text-accent-red ml-2">
+                        <i class="fas fa-trash-alt"></i>
+                    </button>
+                </div>
+            </div>
+            <div v-if="shoppingList.length === 0" class="text-center py-8 text-gray-500 bg-white p-6 rounded-xl shadow-md">
+                <i class="fas fa-clipboard-list fa-3x mb-3"></i>
+                <p>清單是空的，點擊 '+' 新增要準備或購買的東西。</p>
+            </div>
+            
+            <!-- 新增購物清單按鈕 (右下角浮動) -->
+            <button @click="openModal('shopping')" 
+                    class="fixed right-6 bottom-6 md:right-10 md:bottom-10 w-14 h-14 rounded-full bg-accent-gold text-white shadow-2xl hover:bg-accent-red transition-all duration-300 z-50">
+                <i class="fas fa-plus fa-lg"></i>
+            </button>
+        </section>
+
+        <!-- 4. 花費 (Expenses) -->
+        <section v-show="currentTab === 'expenses' && isAuthReady && !isLoading">
+            <h2 class="text-2xl font-semibold mb-6 border-b pb-2 border-accent-gold">旅行花費記錄表</h2>
+
+            <!-- 總花費區塊 -->
+            <div class="p-6 bg-accent-red/20 rounded-xl shadow-lg mb-6 border-l-4 border-accent-red">
+                <p class="text-sm font-medium text-dark">總花費 (台幣 TWD)</p>
+                <p class="text-4xl font-extrabold text-accent-red mt-1">
+                    NT$ {{ totalTWD.toFixed(2) }}
+                </p>
+            </div>
+            
+            <!-- 花費列表 -->
+            <div class="space-y-4">
+                <div v-for="expense in expenses" :key="expense.id" 
+                     @click="editExpense(expense)"
+                     class="bg-white p-4 rounded-xl shadow-lg flex justify-between items-center hover:shadow-xl transition duration-300 cursor-pointer">
+                    <div>
+                        <div class="flex items-center space-x-2">
+                            <span class="font-bold text-lg text-dark">{{ expense.name }}</span>
+                            <span class="text-xs px-2 py-0.5 rounded-full bg-accent-gold/30 text-dark">{{ expense.category }}</span>
+                        </div>
+                        <p class="text-sm text-gray-600 mt-1"><i class="fas fa-calendar-day mr-1"></i> {{ expense.date }}</p>
+                    </div>
+                    <div class="text-right">
+                        <p class="text-xl font-bold text-accent-red">
+                            {{ expense.amount }} {{ expense.currency }}
+                        </p>
+                        <p v-if="expense.currency === 'JPY'" class="text-sm text-gray-500">
+                            ≈ NT$ {{ (expense.amount * exchangeRateJPYToTWD).toFixed(2) }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            <div v-if="expenses.length === 0" class="text-center py-8 text-gray-500 bg-white p-6 rounded-xl shadow-md">
+                <i class="fas fa-hand-holding-dollar fa-3x mb-3"></i>
+                <p>還沒有花費記錄，開始記錄您的開銷吧！</p>
+            </div>
+
+            <!-- 新增花費按鈕 (右下角浮動) -->
+            <button @click="openModal('expense')" 
+                    class="fixed right-6 bottom-6 md:right-10 md:bottom-10 w-14 h-14 rounded-full bg-accent-gold text-white shadow-2xl hover:bg-accent-red transition-all duration-300 z-50">
+                <i class="fas fa-plus fa-lg"></i>
+            </button>
+        </section>
+
+    </main>
+    
+    <!-- 全域彈出視窗 (Modal) -->
+    <div v-if="isModalOpen" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-lg w-full p-6" @click.stop>
+            <h3 class="text-2xl font-bold mb-4 border-b pb-2 text-dark">{{ modalTitle }}</h3>
+
+            <form @submit.prevent="submitModalForm">
+                <!-- 行程新增/編輯表單 -->
+                <div v-if="modalType === 'itinerary'" class="space-y-4">
+                    <input type="text" v-model="modalForm.name" placeholder="行程名稱*" required class="w-full p-3 border rounded-lg">
+                    <select v-model="modalForm.category" required class="w-full p-3 border rounded-lg bg-white">
+                        <option value="" disabled>選擇分類*</option>
+                        <option v-for="cat in categories" :key="cat.value" :value="cat.value">{{ cat.label }}</option>
+                    </select>
+                    <input type="text" v-model="modalForm.details.address" placeholder="地址 (用於導航)" class="w-full p-3 border rounded-lg">
+                    <input type="text" v-model="modalForm.details.hours" placeholder="營業時間 (適用景點/餐飲)" class="w-full p-3 border rounded-lg">
+                    <input type="text" v-model="modalForm.details.ticket" placeholder="門票/費用 (適用景點)" v-if="modalForm.category === 'sightseeing'" class="w-full p-3 border rounded-lg">
+                    <textarea v-model="modalForm.details.notes" placeholder="特色 & 備註" class="w-full p-3 border rounded-lg h-24"></textarea>
+                    
+                    <!-- 編輯模式的刪除按鈕 -->
+                    <button v-if="modalForm.id" @click.prevent="confirmDelete('itinerary', modalForm.id, modalForm.name)" type="button" class="w-full p-3 bg-red-100 text-accent-red font-semibold rounded-lg hover:bg-red-200 transition">
+                        <i class="fas fa-trash-alt mr-2"></i> 刪除此行程
+                    </button>
+                </div>
+                
+                <!-- 購物清單新增/編輯表單 -->
+                <div v-if="modalType === 'shopping'" class="space-y-4">
+                    <input type="text" v-model="modalForm.name" placeholder="清單項目名稱*" required class="w-full p-3 border rounded-lg">
+                </div>
+
+                <!-- 花費新增/編輯表單 -->
+                <div v-if="modalType === 'expense'" class="space-y-4">
+                    <input type="text" v-model="modalForm.name" placeholder="花費名稱*" required class="w-full p-3 border rounded-lg">
+                    <input type="date" v-model="modalForm.date" placeholder="日期*" required class="w-full p-3 border rounded-lg">
+                    <select v-model="modalForm.category" required class="w-full p-3 border rounded-lg bg-white">
+                        <option value="" disabled>選擇類別*</option>
+                        <option v-for="cat in expenseCategories" :key="cat" :value="cat">{{ cat }}</option>
+                    </select>
+                    <div class="flex space-x-3">
+                        <input type="number" v-model.number="modalForm.amount" placeholder="金額*" required min="0" step="0.01" class="w-2/3 p-3 border rounded-lg">
+                        <select v-model="modalForm.currency" class="w-1/3 p-3 border rounded-lg bg-white">
+                            <option value="TWD">TWD 台幣</option>
+                            <option value="JPY">JPY 日幣</option>
+                        </select>
+                    </div>
+                    <!-- 編輯模式的刪除按鈕 -->
+                    <button v-if="modalForm.id" @click.prevent="confirmDelete('expense', modalForm.id, modalForm.name)" type="button" class="w-full p-3 bg-red-100 text-accent-red font-semibold rounded-lg hover:bg-red-200 transition">
+                        <i class="fas fa-trash-alt mr-2"></i> 刪除此花費
+                    </button>
+                </div>
+
+                <div class="flex justify-end space-x-4 mt-6">
+                    <button type="button" @click="isModalOpen = false" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition">
+                        取消
+                    </button>
+                    <button type="submit" class="px-6 py-2 bg-accent-red text-white font-semibold rounded-lg shadow-md hover:bg-dark transition">
+                        儲存
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 刪除確認視窗 -->
+    <div v-if="isConfirmOpen" class="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center" @click.stop>
+            <i class="fas fa-exclamation-triangle fa-3x text-accent-red mb-4"></i>
+            <h3 class="text-xl font-bold mb-2">確認刪除</h3>
+            <p class="mb-6">您確定要刪除「{{ confirmTargetName }}」嗎？此操作無法復原。</p>
+            <div class="flex justify-center space-x-4">
+                <button @click="isConfirmOpen = false" class="px-6 py-2 border border-gray-300 rounded-lg hover:bg-gray-100 transition">
+                    取消
+                </button>
+                <button @click="executeDelete" class="px-6 py-2 bg-accent-red text-white font-semibold rounded-lg shadow-md hover:bg-dark transition">
+                    確定刪除
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 訊息提示 (Toast) -->
+    <div v-if="message.text" :class="{'bg-green-500': message.type === 'success', 'bg-red-500': message.type === 'error'}"
+         class="fixed bottom-4 left-1/2 transform -translate-x-1/2 p-3 text-white rounded-lg shadow-lg z-50 transition-opacity duration-300"
+         style="opacity: 1;">
+        {{ message.text }}
+    </div>
+
+</div>
+
+<script type="module">
+    const { createApp, ref, computed, reactive, watch } = Vue;
+    const { initializeApp, getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged, getFirestore, doc, setDoc, addDoc, updateDoc, deleteDoc, onSnapshot, collection, query, where, getDocs, deleteField } = window.firebase;
+
+    // --- Firebase 變數: 嵌入您的真實配置 ---
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    
+    // 從用戶截圖中提取的真實配置資訊
+    const REAL_FIREBASE_CONFIG = {
+        apiKey: "AIzaSyBAz0XDawvXKNKeAmJrA4ixA2kmeHtS84c",
+        authDomain: "fukuokatripplanner.firebaseapp.com",
+        projectId: "fukuokatripplanner",
+        storageBucket: "fukuokatripplanner.firebasestorage.app",
+        messagingSenderId: "982667637750",
+        appId: "1:982667637750:web:edfeea967773aec2704dd7"",
+        measurementId: "G-33RM6QFJ4J"
+    };
+    
+    // 檢查是否在 Canvas 環境中
+    const isCanvasEnvironment = typeof __firebase_config !== 'undefined';
+
+    const firebaseConfig = isCanvasEnvironment ? JSON.parse(__firebase_config) : REAL_FIREBASE_CONFIG;
+    
+    const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+    const App = {
+        setup() {
+            // --- Firebase 狀態 ---
+            const db = ref(null);
+            const auth = ref(null);
+            const userId = ref(null);
+            const isAuthReady = ref(false);
+            const isLoading = ref(true);
+            
+            // 由於使用 REAL_FIREBASE_CONFIG，如果初始化失敗，我們知道是金鑰或規則問題。
+            const isConfigMissing = ref(false); 
+
+            // --- 應用程式狀態 ---
+            const currentTab = ref('itinerary');
+            const selectedDate = ref('2025-12-11');
+            const filterCategory = ref('');
+            
+            // --- 資料狀態 ---
+            const itinerary = ref([]);
+            const shoppingList = ref([]);
+            const expenses = ref([]);
+
+            // --- 匯率與費用狀態 ---
+            const exchangeRateJPYToTWD = 0.22; // 模擬匯率: 1 JPY = 0.22 TWD
+            const jpyAmount = ref(0);
+            
+            // --- 拖曳狀態 (用於行程排序) ---
+            const draggingItem = ref(null);
+            
+            // --- 彈出視窗/確認視窗狀態 ---
+            const isModalOpen = ref(false);
+            const modalType = ref(''); // 'itinerary', 'shopping', 'expense'
+            const modalTitle = ref('');
+            const modalForm = reactive({
+                id: null, name: '', date: '', category: '', amount: 0, currency: 'TWD', isChecked: false, order: 0, // 加入 order
+                details: { hours: '', ticket: '', notes: '', address: '', flightNumber: '', depTime: '', arrTime: '', duration: '', depAirport: '', arrAirport: '', date: ''}
+            });
+            const isConfirmOpen = ref(false);
+            const confirmTargetId = ref(null);
+            const confirmTargetType = ref('');
+            const confirmTargetName = ref('');
+
+            // --- 訊息提示狀態 ---
+            const message = reactive({ text: '', type: '' });
+
+            // --- 固定資料 ---
+            const tripStartDate = new Date('2025-12-11');
+            const tripEndDate = new Date('2025-12-15');
+            const categories = [
+                { value: 'sightseeing', label: '景點' },
+                { value: 'accommodation', label: '住宿' },
+                { value: 'food', label: '美食' },
+                { value: 'shopping', label: '購物' },
+                { value: 'flight', label: '航班' },
+                { value: 'traffic', label: '交通' },
+                { value: 'other', label: '其他' },
+            ];
+            const expenseCategories = ['交通', '飲食', '住宿', '門票', '購物', '其他'];
+            const tabs = [
+                { id: 'itinerary', icon: 'fas fa-map-marked-alt', name: '行程表' },
+                { id: 'info', icon: 'fas fa-info-circle', name: '資訊' },
+                { id: 'shopping', icon: 'fas fa-list-ul', name: '購物清單' },
+                { id: 'expenses', icon: 'fas fa-money-bill-wave', name: '花費' },
+            ];
+            const flightInfo = {
+                outbound: {
+                    flightNumber: 'BR106', depTime: '08:00', arrTime: '11:15', date: '2025/12/11', duration: '2h 15m', depAirport: 'TPE', arrAirport: 'FUK'
+                },
+                return: {
+                    flightNumber: 'BR105', depTime: '12:15', arrTime: '13:50', date: '2025/12/15', duration: '2h 35m', depAirport: 'FUK', arrAirport: 'TPE'
+                }
+            };
+            const accommodationInfo = {
+                name: 'Lamp Light Books Hotel Fukuoka', phone: '+81927207711', checkIn: '下午3:00', checkOut: '上午10:00',
+                address: '1 Chome-15-22 Daimyo, Chuo Ward, Fukuoka, 福岡県 Fukuoka 810-0041日本',
+                mapLink: 'https://www.google.com/maps/dir/?api=1&destination=Lamp+Light+Books+Hotel+Fukuoka' 
+            };
+
+            // --- 計算屬性 ---
+
+            // 匯率換算結果
+            const convertedTWD = computed(() => {
+                return jpyAmount.value * exchangeRateJPYToTWD;
+            });
+
+            // 總花費 (TWD)
+            const totalTWD = computed(() => {
+                return expenses.value.reduce((total, exp) => {
+                    if (exp.currency === 'JPY') {
+                        return total + (exp.amount * exchangeRateJPYToTWD);
+                    }
+                    return total + exp.amount;
+                }, 0);
+            });
+
+            // 行程日期清單
+            const tripDays = computed(() => {
+                const days = [];
+                let currentDate = new Date(tripStartDate);
+                
+                // 調整日期以匹配 UTC，確保日期計算正確
+                currentDate.setHours(0, 0, 0, 0); 
+                const end = new Date(tripEndDate);
+                end.setHours(0, 0, 0, 0);
+
+                while (currentDate <= end) {
+                    const day = currentDate.getDay();
+                    const dayOfWeekNames = ['日', '一', '二', '三', '四', '五', '六'];
+                    
+                    days.push({
+                        date: currentDate.toISOString().slice(0, 10), // YYYY-MM-DD
+                        dayOfWeek: '週' + dayOfWeekNames[day], // 星期
+                        dayOfMonth: currentDate.getDate() // 日期數字
+                    });
+                    currentDate.setDate(currentDate.getDate() + 1);
+                }
+                return days;
+            });
+
+            // 當前日期的行程列表 (已排序，**無分類篩選**，用於拖曳基礎)
+            const currentDayItinerary = computed(() => {
+                return itinerary.value
+                    .filter(item => item.date === selectedDate.value)
+                    .sort((a, b) => a.order - b.order);
+            });
+
+            // 篩選後的每日行程 (用於 v-for 顯示，是 currentDayItinerary 的子集)
+            const filteredItinerary = computed(() => {
+                if (!filterCategory.value) {
+                    // 如果沒有篩選，使用完整的當日行程
+                    return currentDayItinerary.value;
+                }
+                // 如果有篩選，則從完整的當日行程中過濾
+                return currentDayItinerary.value.filter(item => item.category === filterCategory.value);
+            });
+            
+            // --- 方法 ---
+
+            // 提示訊息
+            const showMessage = (text, type = 'success') => {
+                message.text = text;
+                message.type = type;
+                setTimeout(() => {
+                    message.text = '';
+                }, 3000);
+            };
+
+            // 檢查是否為航班卡片
+            const isFlightCard = (item) => {
+                return item.category === 'flight';
+            };
+
+            // 導航到 Google Maps
+            const openNavigation = (name, address) => {
+                if (!address) {
+                    showMessage(`「${name}」沒有提供地址，無法導航。`, 'error');
+                    return;
+                }
+                const url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+                window.open(url, '_blank');
+            };
+
+            // 打開彈出視窗 (重置表單並設定標題)
+            const openModal = (type, defaults = {}) => {
+                if (isConfigMissing.value) {
+                    showMessage('無法新增/編輯：Firebase 配置缺失，App 處於唯讀模式。', 'error');
+                    return;
+                }
+
+                modalType.value = type;
+                modalForm.id = defaults.id || null;
+                
+                // 重置表單細節
+                Object.assign(modalForm, { 
+                    id: null, name: '', date: selectedDate.value, category: '', amount: 0, currency: 'TWD', isChecked: false, order: 0,
+                    details: { hours: '', ticket: '', notes: '', address: '', flightNumber: '', depTime: '', arrTime: '', duration: '', depAirport: '', arrAirport: '', date: ''}
+                });
+
+                if (type === 'itinerary') {
+                    modalTitle.value = defaults.id ? '編輯行程' : '新增行程';
+                    modalForm.date = defaults.date || selectedDate.value;
+                } else if (type === 'shopping') {
+                    modalTitle.value = defaults.id ? '編輯清單項目' : '新增清單項目';
+                } else if (type === 'expense') {
+                    modalTitle.value = defaults.id ? '編輯花費記錄' : '新增花費記錄';
+                    modalForm.date = new Date().toISOString().slice(0, 10);
+                }
+
+                if (defaults.item) {
+                    // 深度複製以確保編輯不影響原始響應式數據
+                    Object.assign(modalForm, JSON.parse(JSON.stringify(defaults.item)));
+                }
+
+                isModalOpen.value = true;
+            };
+
+            // 編輯行程 (開啟 Modal 並載入資料)
+            const editItem = (item) => {
+                openModal('itinerary', { id: item.id, item: item });
+            };
+            const editShoppingItem = (item) => {
+                openModal('shopping', { id: item.id, item: item });
+            };
+            const editExpense = (item) => {
+                openModal('expense', { id: item.id, item: item });
+            };
+
+            // 提交表單 
+            const submitModalForm = async () => {
+                if (!db.value || !userId.value || isConfigMissing.value) {
+                    showMessage('提交失敗: 資料庫未初始化或配置缺失，無法寫入。', 'error');
+                    console.error("提交失敗: db.value, userId.value, 或配置缺失");
+                    return;
+                }
+                
+                try {
+                    const data = JSON.parse(JSON.stringify(modalForm)); // 複製一份數據
+                    let collectionName = '';
+
+                    if (modalType.value === 'itinerary') {
+                        collectionName = 'itineraries';
+                        delete data.isChecked; delete data.amount; delete data.currency; // 清除不必要的欄位
+                        
+                        // 確保 order 存在 (新增時設置為當日最後一個)
+                        if (!data.id) {
+                           data.order = itinerary.value.filter(i => i.date === data.date).length;
+                        }
+
+                    } else if (modalType.value === 'shopping') {
+                        collectionName = 'shoppinglist';
+                        delete data.date; delete data.category; delete data.amount; delete data.currency; delete data.details; delete data.order;
+                        data.isChecked = data.isChecked || false;
+
+                    } else if (modalType.value === 'expense') {
+                        collectionName = 'expenses';
+                        delete data.date; delete data.category; delete data.details; delete data.isChecked; delete data.order;
+                        // 確保金額為數字
+                        data.amount = parseFloat(data.amount);
+                    }
+
+                    if (data.id) {
+                        // 更新
+                        const docRef = doc(db.value, `artifacts/${appId}/users/${userId.value}/${collectionName}`, data.id);
+                        await updateDoc(docRef, data);
+                        showMessage(`${modalTitle.value}成功更新!`);
+                    } else {
+                        // 新增
+                        const colRef = collection(db.value, `artifacts/${appId}/users/${userId.value}/${collectionName}`);
+                        await addDoc(colRef, data);
+                        showMessage(`${modalTitle.value}成功新增!`);
+                    }
+
+                    isModalOpen.value = false;
+                } catch (error) {
+                    console.error("提交失敗:", error);
+                    showMessage(`提交失敗: ${error.message}`, 'error');
+                }
+            };
+            
+            // 確認刪除
+            const confirmDelete = (type, id, name) => {
+                isModalOpen.value = false; // 關閉編輯視窗
+                confirmTargetType.value = type;
+                confirmTargetId.value = id;
+                confirmTargetName.value = name;
+                isConfirmOpen.value = true;
+            };
+
+            // 執行刪除 
+            const executeDelete = async () => {
+                if (!db.value || !userId.value || isConfigMissing.value) {
+                    showMessage('刪除失敗: 資料庫未初始化或配置缺失，無法寫入。', 'error');
+                    console.error("刪除失敗: db.value, userId.value, 或配置缺失");
+                    isConfirmOpen.value = false;
+                    return;
+                }
+
+                try {
+                    let collectionName = '';
+                    if (confirmTargetType.value === 'itinerary') {
+                        collectionName = 'itineraries';
+                    } else if (confirmTargetType.value === 'shopping') {
+                        collectionName = 'shoppinglist';
+                    } else if (confirmTargetType.value === 'expense') {
+                        collectionName = 'expenses';
+                    }
+
+                    const docRef = doc(db.value, `artifacts/${appId}/users/${userId.value}/${collectionName}`, confirmTargetId.value);
+                    await deleteDoc(docRef);
+                    showMessage(`項目「${confirmTargetName.value}」已成功刪除。`);
+                    isConfirmOpen.value = false;
+                    
+                } catch (error) {
+                    console.error("刪除失敗:", error);
+                    showMessage(`刪除失敗: ${error.message}`, 'error');
+                    isConfirmOpen.value = false;
+                }
+            };
+            
+            // 切換購物清單項目狀態
+            const toggleShoppingItem = async (id) => {
+                if (!db.value || !userId.value || isConfigMissing.value) {
+                    showMessage('操作失敗: 配置缺失，無法寫入。', 'error');
+                    return;
+                }
+
+                try {
+                    const item = shoppingList.value.find(i => i.id === id);
+                    if (item) {
+                        const docRef = doc(db.value, `artifacts/${appId}/users/${userId.value}/shoppinglist`, id);
+                        await updateDoc(docRef, { isChecked: !item.isChecked });
+                    }
+                } catch (error) {
+                    console.error("切換狀態失敗:", error);
+                    showMessage("切換狀態失敗", 'error');
+                }
+            };
+
+            // 1. 拖曳排序邏輯 (基礎實現)
+            const handleDragStart = (item, event) => {
+                 if (item.category === 'flight' || filterCategory.value !== '') {
+                    // 航班不能拖曳，且篩選狀態下禁用拖曳
+                    event.preventDefault();
+                    return;
+                }
+                draggingItem.value = item;
+                // 設置拖曳數據 (可選，但標準)
+                event.dataTransfer.setData('text/plain', item.id);
+            };
+
+            const handleDrop = async (dropIndex, event) => {
+                event.preventDefault();
+                const draggedItem = draggingItem.value;
+                if (!draggedItem || draggedItem.category === 'flight') return;
+
+                if (!db.value || !userId.value || isConfigMissing.value) {
+                    showMessage('排序失敗: 資料庫未初始化或配置缺失，無法寫入。', 'error');
+                    console.error("排序失敗: db.value, userId.value, 或配置缺失");
+                    draggingItem.value = null;
+                    return;
+                }
+
+                const dayItems = currentDayItinerary.value; // 使用當前日的完整列表
+                
+                const originalIndex = dayItems.findIndex(item => item.id === draggedItem.id);
+                if (originalIndex === -1) return;
+
+                // 1. 執行本地排序 (需要複製陣列避免直接修改 computed)
+                const newOrderArray = [...dayItems];
+                // 從原始位置移除
+                newOrderArray.splice(originalIndex, 1); 
+                // 插入到新位置
+                newOrderArray.splice(dropIndex, 0, draggedItem); 
+
+                // 2. 準備 Firestore 批次更新
+                const batchUpdates = [];
+                newOrderArray.forEach((item, index) => {
+                    // 只更新 order 改變的項目
+                    if (item.order !== index) {
+                        batchUpdates.push({ id: item.id, order: index });
+                    }
+                });
+
+                if (batchUpdates.length > 0) {
+                    try {
+                        // 使用 updateDoc 執行更新
+                        for (const item of batchUpdates) {
+                             const docRef = doc(db.value, `artifacts/${appId}/users/${userId.value}/itineraries`, item.id);
+                             await updateDoc(docRef, { order: item.order });
+                        }
+                        showMessage('行程順序已更新。');
+                    } catch (error) {
+                        console.error("更新順序失敗:", error);
+                        showMessage('行程順序更新失敗。', 'error');
+                    }
+                }
+                draggingItem.value = null; // 清除拖曳狀態
+            };
+            
+
+            // --- Firebase 初始化與資料監聽 ---
+
+            const createInitialData = async (uid) => {
+                // 如果配置缺失，則不進行寫入操作
+                if (isConfigMissing.value) return; 
+
+                try {
+                    const colRef = collection(db.value, `artifacts/${appId}/users/${uid}/itineraries`);
+                    
+                    // 檢查是否已存在行程 (避免重複新增)
+                    const q = query(colRef, where("date", "==", "2025-12-11"));
+                    const querySnapshot = await getDocs(q);
+                    if (!querySnapshot.empty) {
+                        console.log("行程已存在，跳過初始資料新增。");
+                        return;
+                    }
+
+                    // 初始行程數據 (基於您的附件)
+                    const initialItinerary = [
+                        // 12/11 (Thu)
+                        { name: 'BR106 TPE → FUK', date: '2025-12-11', category: 'flight', order: 0, details: flightInfo.outbound },
+                        { name: '抵達福岡 (A3搭乘往國內線巴士, 儲值IC卡)', date: '2025-12-11', category: 'traffic', order: 1, details: { address: 'Fukuoka Airport Domestic Terminal', hours: '11:15', notes: '機場領JRPASS, 預約新幹線' } },
+                        { name: 'Lamp Light Books Hotel Fukuoka Check-in', date: '2025-12-11', category: 'accommodation', order: 2, details: { address: accommodationInfo.address, hours: '15:00', notes: '確認行李先放置物櫃' } },
+                        { name: '大濠公園', date: '2025-12-11', category: 'sightseeing', order: 3, details: { address: 'Ohori Park, Chuo Ward, Fukuoka', hours: '全天開放', ticket: '免費', notes: '' } },
+                        // 12/12 (Fri)
+                        { name: '從飯店出發 (搭乘6-1公車)', date: '2025-12-12', category: 'traffic', order: 0, details: { address: 'Hakata Station', hours: '07:21', notes: '到Hakata Sta. E(bus)下車' } },
+                        { name: '搭乘由布號 (5號月台) 往由布院', date: '2025-12-12', category: 'traffic', order: 1, details: { address: 'Hakata Station', hours: '07:43', notes: '' } },
+                        { name: '抵達由布院', date: '2025-12-12', category: 'sightseeing', order: 2, details: { address: 'Yufuin Station', hours: '10:02', ticket: '無', notes: '開始由布院觀光' } },
+                        { name: '由布院之森 6 返回博多', date: '2025-12-12', category: 'traffic', order: 3, details: { address: 'JR Hakata Station', hours: '17:17 - 19:28', notes: '' } },
+                    ];
+
+                    for (const item of initialItinerary) {
+                        await addDoc(colRef, item);
+                    }
+
+                } catch (error) {
+                    console.error("創建初始資料失敗:", error);
+                }
+            };
+            
+            const initFirebase = async () => {
+                
+                if (isConfigMissing.value) { // 預防性檢查
+                    showMessage("警告：Firebase 配置缺失，無法儲存資料，App 處於唯讀模式。", 'error');
+                    isAuthReady.value = true;
+                    isLoading.value = false;
+                    return;
+                }
+                
+                try {
+                    const app = initializeApp(firebaseConfig);
+                    db.value = getFirestore(app);
+                    auth.value = getAuth(app);
+
+                    // 處理登入
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth.value, initialAuthToken);
+                    } else {
+                        // 如果沒有 token，則匿名登入
+                        await signInAnonymously(auth.value);
+                    }
+                    
+                    // 監聽 Auth 狀態
+                    onAuthStateChanged(auth.value, async (user) => {
+                        if (user) {
+                            userId.value = user.uid;
+                            isAuthReady.value = true;
+                            console.log("Firebase 認證成功，UID:", user.uid);
+                            
+                            // 初始化預設行程 (僅在第一次登入時)
+                            await createInitialData(user.uid);
+                            
+                            // 開始監聽資料
+                            setupDataListeners(user.uid);
+                        } else {
+                            userId.value = null;
+                            isAuthReady.value = true;
+                            isLoading.value = false;
+                            console.log("Firebase 匿名登入成功。");
+                        }
+                    });
+
+                } catch (error) {
+                    console.error("Firebase 初始化失敗:", error);
+                    // 如果初始化失敗，設定為配置缺失模式，並顯示錯誤
+                    isConfigMissing.value = true;
+                    isAuthReady.value = true;
+                    isLoading.value = false;
+                    showMessage("致命錯誤：Firebase 初始化失敗。請檢查您的配置是否正確。", 'error');
+                }
+            };
+
+            const setupDataListeners = (uid) => {
+                if (!db.value || !uid || isConfigMissing.value) return;
+                isLoading.value = true;
+
+                // 1. 行程 (Itinerary) 監聽
+                const itineraryColRef = collection(db.value, `artifacts/${appId}/users/${uid}/itineraries`);
+                onSnapshot(itineraryColRef, (snapshot) => {
+                    itinerary.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                    // 確保選中日期為有效日期 (或預設為今天)
+                    if (!tripDays.value.find(d => d.date === selectedDate.value)) {
+                         selectedDate.value = tripDays.value[0]?.date || new Date().toISOString().slice(0, 10);
+                    }
+                    isLoading.value = false;
+                }, (error) => {
+                    console.error("行程資料監聽失敗:", error);
+                    showMessage("行程資料載入失敗。", 'error');
+                });
+                
+                // 2. 購物清單 (Shopping List) 監聽
+                const shoppingColRef = collection(db.value, `artifacts/${appId}/users/${uid}/shoppinglist`);
+                onSnapshot(shoppingColRef, (snapshot) => {
+                    shoppingList.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                });
+                
+                // 3. 花費 (Expenses) 監聽
+                const expensesColRef = collection(db.value, `artifacts/${appId}/users/${uid}/expenses`);
+                onSnapshot(expensesColRef, (snapshot) => {
+                    expenses.value = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data(), amount: parseFloat(doc.data().amount) }));
+                });
+            };
+
+            // 在組件掛載後初始化 Firebase
+            window.onload = initFirebase;
+            
+            return {
+                // 狀態
+                db, auth, userId, isAuthReady, isLoading, currentTab, selectedDate, filterCategory, isConfigMissing,
+                itinerary, shoppingList, expenses, jpyAmount, draggingItem,
+                isModalOpen, modalType, modalTitle, modalForm, isConfirmOpen, confirmTargetName, message,
+
+                // 計算屬性
+                convertedTWD, totalTWD, tripDays, filteredItinerary, currentDayItinerary, 
+
+                // 固定資料
+                categories, expenseCategories, tabs, flightInfo, accommodationInfo, exchangeRateJPYToTWD,
+
+                // 方法
+                openNavigation, openModal, editItem, editShoppingItem, editExpense,
+                submitModalForm, confirmDelete, executeDelete, toggleShoppingItem,
+                isFlightCard, handleDragStart, handleDrop
+            };
+        }
+    };
+
+    createApp(App).mount('#app');
+</script>
+</body>
+</html>
+
